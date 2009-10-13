@@ -19,15 +19,29 @@ class Thumbnailable extends Doctrine_Template
    */
 
   protected $options = array(
-    'config_key'    => null,
-    'thumb_dir'     => 'thumbnails',
-    'path_method'   => null,
-    'keep_original' => true,
-    'on_demand'     => true,
-    'on_save'       => true,
-    'strict'        => false,
-    'fields'        => array(),
+    'config_key'         => null,
+    'thumb_dir'          => '%s/thumbnails',
+    'path_method'        => null,
+    'keep_original'      => true,
+    'on_demand'          => true,
+    'on_save'            => true,
+    'strict'             => false,
+    'fail_silently'      => false,
+    'path_to_url_method' => array('Thumbnailable', 'pathToUrl'),
+    'fields'             => array(),
   );
+
+  /**
+   * Converts an absolute path to an url based
+   * on default symfony directories
+   *
+   * @param string $string
+   * @return string
+   */
+  public static function pathToUrl($string)
+  {
+    return str_replace(sfConfig::get('sf_web_dir'), '', $string);
+  }
 
   /**
    * @param array $options
@@ -167,13 +181,13 @@ class Thumbnailable extends Doctrine_Template
    * @return string the thumbnail path
    */
 
-  protected function getThumbnailPath($field, $format, $absolute = false)
+  protected function getThumbnailPath($field, $format)
   {
     $image_path = $this->getFilePath($field);
     $thumb_dir  = sprintf($this->getOption('thumb_dir', $field), dirname($image_path));
     $thumb_path = sprintf('%s/%s_%s', $thumb_dir, $format, basename($image_path));
 
-    return ($absolute ? $thumb_path : str_replace(sfConfig::get('sf_web_dir'), '', $thumb_path));
+    return $thumb_path;
   }
 
   /**
@@ -198,13 +212,18 @@ class Thumbnailable extends Doctrine_Template
     list($field, $format) = $this->guessArguments(func_get_args());
 
     $abs_file_path = $this->getFilePath($field);
-    
+
     if (!file_exists($abs_file_path) || is_dir($abs_file_path))
     {
-      throw new sfException(sprintf('Cannot create thumbnail for non-existent file "%s"', $this->getInvoker()->get($field)));
+      if ($this->getOption('fail_silently', $field))
+      {
+        return '#';
+      }
+
+      throw new sfException(sprintf('Cannot create thumbnail for non-existent file "%s"', $abs_file_path));
     }
 
-    if (!file_exists($this->getThumbnailPath($field, $format, true)))
+    if (!file_exists($this->getThumbnailPath($field, $format)))
     {
       if (!$this->getOption('on_demand', $field))
       {
@@ -225,7 +244,7 @@ class Thumbnailable extends Doctrine_Template
       $this->createThumbnail($field, $format);
     }
 
-    return $this->getThumbnailPath($field, $format);
+    return call_user_func($this->getOption('path_to_url_method', $field), $this->getThumbnailPath($field, $format));
   }
 
   /**
@@ -246,7 +265,7 @@ class Thumbnailable extends Doctrine_Template
     $thumbnail = new sfThumbnail($width, $height);
     $thumbnail->loadFile($this->getFilePath($field));
 
-    $thumbnail_path = $this->getThumbnailPath($field, $format, true);
+    $thumbnail_path = $this->getThumbnailPath($field, $format);
     $thumbnail_dir  = dirname($thumbnail_path);
 
     if (!file_exists($thumbnail_dir))
@@ -414,7 +433,7 @@ class Thumbnailable extends Doctrine_Template
     }
     
     $method = sprintf($path_method, Doctrine_Inflector::classify($field));
-      
+
     if (!method_exists($object, $method))
     {
       throw new sfException(sprintf('Object of class "%s" does not implement a "%s()" method', get_class($object), $method));
